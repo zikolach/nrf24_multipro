@@ -45,6 +45,7 @@
 #define ledPin    13 // LED  - D13
 
 // SPI outputs
+// http://pinguino.walii.es/wp-content/uploads/2014/10/pinoutNRF24L01.jpg
 #define MOSI_on PORTD |= _BV(3)  // PD3
 #define MOSI_off PORTD &= ~_BV(3)// PD3
 #define SCK_on PORTD |= _BV(4)   // PD4
@@ -61,9 +62,9 @@
 // PPM stream settings
 #define CHANNELS 12 // number of channels in ppm stream, 12 ideally
 enum chan_order{
-    THROTTLE,
-    AILERON,
     ELEVATOR,
+    AILERON,
+    THROTTLE,
     RUDDER,
     AUX1,  // (CH5)  led light, or 3 pos. rate on CX-10, H7, or inverted flight on H101
     AUX2,  // (CH6)  flip control
@@ -75,8 +76,10 @@ enum chan_order{
     AUX8,  // (CH12) Reset / Rebind
 };
 
-#define PPM_MIN 1000
-#define PPM_SAFE_THROTTLE 1050 
+boolean chan_inverted[CHANNELS]  = { false, true, false, true, false, false, false, false, false, false, false, false };
+
+#define PPM_MIN 1050
+#define PPM_SAFE_THROTTLE 1100 //1050 
 #define PPM_MID 1500
 #define PPM_MAX 2000
 #define PPM_MIN_COMMAND 1300
@@ -134,13 +137,14 @@ void setup()
     TCCR1B |= (1 << CS11);  //set timer1 to increment every 1 us @ 8MHz, 0.5 us @16MHz
 
     set_txid(false);
+    current_protocol = PROTO_BAYANG;
 }
 
 void loop()
 {
     uint32_t timeout;
     // reset / rebind
-    if(reset || ppm[AUX8] > PPM_MAX_COMMAND) {
+    if(reset || ppm[AUX1] > PPM_MAX_COMMAND) {
         reset = false;
         selectProtocol();        
         NRF24L01_Reset();
@@ -212,6 +216,7 @@ void selectProtocol()
         set_txid(true);                      // Renew Transmitter ID
     
     // protocol selection
+
     
     // Rudder right + Aileron left
     if(ppm[RUDDER] > PPM_MAX_COMMAND && ppm[AILERON] < PPM_MIN_COMMAND)
@@ -251,9 +256,10 @@ void selectProtocol()
     
     // read last used protocol from eeprom
     else 
-        current_protocol = constrain(EEPROM.read(ee_PROTOCOL_ID),0,PROTO_END-1);      
+        //current_protocol = constrain(EEPROM.read(ee_PROTOCOL_ID),0,PROTO_END-1);      
+        current_protocol = PROTO_BAYANG;
     // update eeprom 
-    EEPROM.update(ee_PROTOCOL_ID, current_protocol);
+//    EEPROM.update(ee_PROTOCOL_ID, current_protocol);
     // wait for safe throttle
     while(ppm[THROTTLE] > PPM_SAFE_THROTTLE) {
         delay(100);
@@ -302,7 +308,11 @@ void update_ppm()
 {
     for(uint8_t ch=0; ch<CHANNELS; ch++) {
         ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+          if (chan_inverted[ch]) {
+            ppm[ch] = (Servo_data[ch] - PPM_MID) * -1 + PPM_MID;
+          } else {
             ppm[ch] = Servo_data[ch];
+          }
         }
     }    
 }
